@@ -1,0 +1,109 @@
+---
+title: "Using tidycensus"
+author: "Christopher Prener, PhD"
+format: html
+editor: visual
+---
+
+## Before You Begin
+
+1.  go to the [Census Bureau's website](https://api.census.gov/data/key_signup.html) and get an API key
+
+2.  install the key in your console using: `tidycensus::census_api_key(key = KEY, install = TRUE)`
+
+## Dependencies
+
+The following packages are needed:
+
+```{r}
+#| message: false
+library(dplyr)        # data wrangling
+library(stringr)      # string wrangling
+library(tidycensus)   # census bureau api access
+```
+
+## Resources
+
+There are a number of helpful sites to bookmark for working with the ACS:
+
+-   [data.census.gov](https://data.census.gov)
+
+-   [API documentation, 2020 ACS, detailed variables](https://api.census.gov/data/2020/acs/acs5/variables.html) - these are the `B` and `C` variables that contained the most detailed ACS data
+
+-   [API documentation, 2020 ACS, subject variables](https://api.census.gov/data/2020/acs/acs5/subject/variables.html) - these are the `S` variables that contain simplified breakdowns for specific topics as well as pre-calculated percentages
+
+-   [API documentation, 2020 ACS, profile variables](https://api.census.gov/data/2020/acs/acs5/profile/variables.html) - these are the `DP` variables for data profiles, especially helpful for household-level data
+
+The `tidycensus` [website](https://walker-data.com/tidycensus/index.html) is also a helpful page to bookmark.
+
+## Available Years
+
+ACS data are currently available through 2021 for the 1-year ACS and 2020 for the 5-year ACS. For most use cases, the 5-year ACS is the better choice.
+
+## Listing Variables
+
+The `load_variables()` function in `tidycensus` can emulate the output of the API websites. For the data set, use one of:
+
+-   `"acs5"`
+
+-   `"acs5/subject"`
+
+-   `"acs5/profile"`
+
+```{r}
+#| message: false
+vars_detailed <- load_variables(year = 2020, dataset = "acs5")
+vars_subject <- load_variables(year = 2020, dataset = "acs5/subject")
+```
+
+You can search these objects using `View(vars_detailed)` in RStudio and then using the filter functionality. Alternatively, you can use `stringr`'s `str_detect()` function:
+
+```{r}
+vars_subject %>%
+  filter(str_detect(concept, pattern = "AGE"))
+```
+
+## GEOID Values
+
+Demographic data will be downloaded with a `GEOID` value. For state and county, these will correspond to the respective FIPS codes (`01` for the state of Alabama, for example, or `01001` for Alabama County, Alabama). For other geographies, these will correspond to the Census Bureau's unique identifiers for those specific types of areas.
+
+The `tidycensus` website contains a helpful list of [geographic values](https://walker-data.com/tidycensus/articles/basic-usage.html#geography-in-tidycensus) to pick from.
+
+## Downloading Data
+
+Once you have identified variables of interest, you can pass them to `table` or `variables` arguments in `get_acs()`. For instance, we can download counts for all of the Census Bureau's age bands in the total population (not broken down by sex or race), which are found in the table `S0101_C01`:
+
+```{r}
+#| message: false
+
+## for entire US
+us_age <- get_acs(geography = "us", table = "S0101_C01")
+
+## by state
+state_age <- get_acs(geography = "state", table = "S0101_C01", output = "wide") %>%
+  select(GEOID, S0101_C01_001E, S0101_C01_002E) %>%
+  rename(
+    total_pop = S0101_C01_001E,
+    under_5 = S0101_C01_002E
+  )
+```
+
+In this example, the `us_age` data are "tidy" data, so they have columns for `variable`, `estimate`, and `moe` (margin of error - by default, this is set to 90% confidence intervals). Each row is therefore a single variable per requested geography (i.e. one row per variable per country, state, county, etc).
+
+In `state_age`, however, we've set `output = "wide"` and get a single row per geography (per state in this example) with individual columns for each total population variable. We then subset columns down to get counts for the population under 5, and rename the variables to match their labels.
+
+We can also use the `variables` argument to only receive specific variables. For example, we can get the total counts for male individuals (`S0101_C03_001`) and female individuals (`S0101_C05_001`) only by passing a vector of variable names to `variables`:
+
+```{r}
+#| message: false
+state_sex <- get_acs(geography = "state", 
+                     variables = c("S0101_C03_001",
+                                   "S0101_C05_001"),
+                     output = "wide") %>%
+  rename(
+    male_pop = S0101_C03_001E,
+    female_pop = S0101_C05_001E
+  )
+```
+
+Note that you do not need to only include variables from the same table here. A vector of variable names from different tables, and even different types of tables (such as a mix of detailed, subject, and profile variables) can be passed to `get_acs()` via the `variables` argument.
